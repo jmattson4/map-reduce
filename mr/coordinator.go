@@ -109,7 +109,7 @@ func (c *Coordinator) timerForWorker(taskType TaskType, identify string) {
 	}
 }
 
-//checkAllMapTask will cehck if all the current map tasks are complete for a
+//checkAllMapTask will check if all the current map tasks are complete for a
 //given coordinator
 func checkAllMapTask(c *Coordinator) bool {
 	c.mapTasks.RLock()
@@ -122,7 +122,7 @@ func checkAllMapTask(c *Coordinator) bool {
 	return true
 }
 
-//checkAllReduceTask will cehck if all the current reduce tasks are complete for a
+//checkAllReduceTask will check if all the current reduce tasks are complete for a
 //given coordinator
 func checkAllReduceTask(c *Coordinator) bool {
 	c.reduceTasks.RLock()
