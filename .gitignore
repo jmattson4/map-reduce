@@ -1,0 +1,6 @@
+mr-tmp/*
+.idea
+
+*.so
+
+build
