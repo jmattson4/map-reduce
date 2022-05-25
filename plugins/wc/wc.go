@@ -7,10 +7,11 @@ package main
 //
 
 import (
-	"map-reduce/mr"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 //

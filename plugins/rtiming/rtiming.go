@@ -10,10 +10,11 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"map-reduce/mr"
 	"os"
 	"syscall"
 	"time"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 func nparallel(phase string) int {

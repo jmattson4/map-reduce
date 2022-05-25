@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"map-reduce/mr"
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 //

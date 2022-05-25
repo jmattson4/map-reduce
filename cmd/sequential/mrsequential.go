@@ -10,10 +10,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"map-reduce/mr"
 	"os"
 	"plugin"
 	"sort"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 // for sorting by key.

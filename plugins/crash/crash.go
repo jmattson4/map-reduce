@@ -10,13 +10,14 @@ package main
 
 import (
 	crand "crypto/rand"
-	"map-reduce/mr"
 	"math/big"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 func maybeCrash() {

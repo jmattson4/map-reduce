@@ -11,12 +11,13 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"map-reduce/mr"
 	"math/rand"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 var count int

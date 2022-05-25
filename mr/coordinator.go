@@ -202,8 +202,7 @@ func (c *Coordinator) generateTasks() {
 // start a thread that listens for RPCs from worker.go
 //
 func (c *Coordinator) server() {
-	rpc.Register(c)
-	rpc.HandleHTTP()
+	c.rpc()
 	go c.generateTasks()
 	//l, e := net.Listen("tcp", ":1234")
 	sockname := coordinatorSock()
@@ -215,6 +214,11 @@ func (c *Coordinator) server() {
 	}
 	c.logger.Print("Starting Server in seperate go routine")
 	go http.Serve(l, nil)
+}
+
+func (c *Coordinator) rpc() {
+	rpc.Register(c)
+	rpc.HandleHTTP()
 }
 
 //

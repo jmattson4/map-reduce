@@ -8,10 +8,11 @@ package main
 
 import (
 	"fmt"
-	"map-reduce/mr"
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 // The mapping function is called once for each piece of the input.

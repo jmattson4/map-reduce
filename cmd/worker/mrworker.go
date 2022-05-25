@@ -14,9 +14,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"map-reduce/mr"
 	"os"
 	"plugin"
+
+	"github.com/jmattson4/map-reduce/mr"
 )
 
 func main() {
