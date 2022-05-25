@@ -28,6 +28,8 @@ type Coordinator struct {
 	//ThreadSafeMap which holds the map task id and its current status.
 	mapTasks *ThreadSafeMap[string, TaskStatus]
 
+	logger *log.Logger
+
 	reduceTaskChan chan int
 	mapTaskChan    chan string
 }
@@ -38,12 +40,12 @@ type Coordinator struct {
 // re queue the task if not compelted in a timely manner. CompleteMap will complete a map task in c.mapTasks.
 // CompleteReduce will complete a reduce task from c.reduceTasks.
 func (c *Coordinator) TaskHandler(args *TaskArgs, reply *TaskReply) error {
-	log.Printf("Task Handler Starting type: %v", args.HandlerType)
+	c.logger.Printf("Task Handler Starting type: %v", args.HandlerType)
 	switch args.HandlerType {
 	case GetTask:
 		select {
 		case filename := <-c.mapTaskChan:
-			log.Printf("Task Handler Map Task %v", filename)
+			c.logger.Printf("Task Handler Map Task %v", filename)
 			// allocate map task
 			reply.NReduce = c.nReduce
 			reply.Id = filename
@@ -84,11 +86,11 @@ func (c *Coordinator) timerForWorker(taskType TaskType, identify string) {
 		select {
 		case <-ticker.C:
 			if taskType == Map {
-				log.Printf("Re adding %v to map tasks", identify)
+				c.logger.Printf("Re adding %v to map tasks", identify)
 				c.mapTasks.Put(identify, NotStarted)
 				c.mapTaskChan <- identify
 			} else if taskType == Reduce {
-				log.Printf("Re adding %v to reduce tasks", identify)
+				c.logger.Printf("Re adding %v to reduce tasks", identify)
 				index, _ := strconv.Atoi(identify)
 				c.reduceTasks.Put(index, NotStarted)
 				c.reduceTaskChan <- index
@@ -159,16 +161,16 @@ func (c *Coordinator) setDefaults(files []string, nReduce int) {
 // for each c.reduceTasks feeding them into the reduceTasks channel
 // and then also check them until they are all complete.
 func (c *Coordinator) generateTasks() {
-	log.Print("Starting Generate Map Tasks")
+	c.logger.Print("Starting Generate Map Tasks")
 	c.mapTasks.RLock()
 	for fileName, s := range c.mapTasks.m {
 		if s == NotStarted {
-			log.Printf("Generating Map Task %v", fileName)
+			c.logger.Printf("Generating Map Task %v", fileName)
 			c.mapTaskChan <- fileName
 		}
 	}
 	c.mapTasks.RUnlock()
-	log.Print("Finished Generate Map Tasks")
+	c.logger.Print("Finished Generate Map Tasks")
 	ok := false
 	for !ok {
 		ok = checkAllMapTask(c)
@@ -177,7 +179,7 @@ func (c *Coordinator) generateTasks() {
 	c.mu.Lock()
 	c.mapTaskCompleted = true
 	c.mu.Unlock()
-	log.Print("Starting Generate Reduce Tasks")
+	c.logger.Print("Starting Generate Reduce Tasks")
 	c.reduceTasks.RLock()
 	for id, s := range c.reduceTasks.m {
 		if s == NotStarted {
@@ -185,7 +187,7 @@ func (c *Coordinator) generateTasks() {
 		}
 	}
 	c.reduceTasks.RUnlock()
-	log.Print("Finish Generate Reduce Tasks")
+	c.logger.Print("Finish Generate Reduce Tasks")
 	ok = false
 	for !ok {
 		ok = checkAllReduceTask(c)
@@ -206,12 +208,12 @@ func (c *Coordinator) server() {
 	//l, e := net.Listen("tcp", ":1234")
 	sockname := coordinatorSock()
 	os.Remove(sockname)
-	log.Printf("Now listening on sock %v", sockname)
+	c.logger.Printf("Now listening on sock %v", sockname)
 	l, e := net.Listen("unix", sockname)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	log.Print("Starting Server in seperate go routine")
+	c.logger.Print("Starting Server in seperate go routine")
 	go http.Serve(l, nil)
 }
 
@@ -230,12 +232,16 @@ func (c *Coordinator) Done() bool {
 	return ret
 }
 
+func (c *Coordinator) SetLogger(log *log.Logger) {
+	c.logger = log
+}
+
 //
 // create a Coordinator.
 // cmd/coordiantor/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 //
-func MakeCoordinator(files []string, nReduce int) *Coordinator {
+func MakeCoordinator(files []string, nReduce int, log *log.Logger) *Coordinator {
 	c := Coordinator{}
 	// Your code here.
 	mapTasks := make(chan string, len(files))
@@ -245,6 +251,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.reduceTaskChan = reduceTasks
 
 	c.setDefaults(files, nReduce)
+	c.SetLogger(log)
 	c.server()
 	return &c
 }
