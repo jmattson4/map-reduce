@@ -16,21 +16,9 @@ import (
 	"sync"
 )
 
-//
-// Map functions return a slice of KeyValue.
-//
-type KeyValue struct {
-	Key   string
-	Value string
-}
-
-// for sorting by key.
-type ByKey []KeyValue
-
-// for sorting by key.
-func (a ByKey) Len() int           { return len(a) }
-func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
+var (
+	packageLogger *log.Logger = nil
+)
 
 //
 // use ihash(key) % NReduce to choose the reduce
@@ -73,13 +61,14 @@ func getTask() (tr *TaskReply, ok bool) {
 // the tasks.
 //
 func Worker(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
+	reducef func(string, []string) string, log *log.Logger) {
 	// Your worker implementation here.
+	packageLogger = log
 	ok := true
 	for ok {
 		tr, ok := getTask()
 		if !ok {
-			log.Printf("failed getting task from coordinator %v", os.Getpid())
+			packageLogger.Printf("failed getting task from coordinator %v", os.Getpid())
 			break
 		}
 
@@ -105,18 +94,18 @@ func runMapf(mapTaskReply *TaskReply, mapf func(string, string) []KeyValue) {
 		return
 	}
 
-	log.Printf("starting map task %v read file operation", mapTaskReply.Id)
+	packageLogger.Printf("starting map task %v read file operation", mapTaskReply.Id)
 	filename := mapTaskReply.Id
 	fileContents, err := readFile(filename)
 	if err != nil {
-		log.Print(fmt.Errorf("error reading file %v for task %v. Error: %w", filename, mapTaskReply.Id, err))
+		packageLogger.Print(fmt.Errorf("error reading file %v for task %v. Error: %w", filename, mapTaskReply.Id, err))
 		return
 	}
 
-	log.Printf("starting map task %v map & sort operation", mapTaskReply.Id)
+	packageLogger.Printf("starting map task %v map & sort operation", mapTaskReply.Id)
 	kva := mapf(filename, fileContents)
 
-	log.Printf("starting map task %v intermediary file write", mapTaskReply.Id)
+	packageLogger.Printf("starting map task %v intermediary file write", mapTaskReply.Id)
 	tempFiles, err := writeIntermediaryFiles(
 		mapTaskReply.NReduce,
 		mapTaskReply.Id,
@@ -124,18 +113,18 @@ func runMapf(mapTaskReply *TaskReply, mapf func(string, string) []KeyValue) {
 	)
 
 	if err != nil {
-		log.Print(fmt.Errorf("error writing intermediary files for task %v. Error: %w", mapTaskReply.Id, err))
+		packageLogger.Print(fmt.Errorf("error writing intermediary files for task %v. Error: %w", mapTaskReply.Id, err))
 		return
 	}
 
 	ok := completeMapTask(mapTaskReply.Id)
 	if !ok {
-		log.Printf("failed map task %v call to CompleteMapTask rpc call to coordinator", mapTaskReply.Id)
+		packageLogger.Printf("failed map task %v call to CompleteMapTask rpc call to coordinator", mapTaskReply.Id)
 		return
 	}
 
 	if err = renameTempFiles(tempFiles, mapTaskReply.Id); err != nil {
-		log.Printf("failed map task %v rewrite files error %v", mapTaskReply.Id, err)
+		packageLogger.Printf("failed map task %v rewrite files error %v", mapTaskReply.Id, err)
 		return
 	}
 }
@@ -145,18 +134,18 @@ func runMapf(mapTaskReply *TaskReply, mapf func(string, string) []KeyValue) {
 // decodeIntermediaryFile. After it will finally sort then reduce the given key value pairs before writing to an
 // output file.
 func runReducef(reduceTaskReply *TaskReply, reducef func(string, []string) string) {
-	log.Printf("starting reduce task %v intermediary file read", reduceTaskReply.Id)
+	packageLogger.Printf("starting reduce task %v intermediary file read", reduceTaskReply.Id)
 	index, _ := strconv.Atoi(reduceTaskReply.Id)
 	files, err := readIntermediaryFiles(index)
 	if err != nil {
-		log.Print(fmt.Errorf("error occured while attempting to read reduce files %w", err))
+		packageLogger.Print(fmt.Errorf("error occured while attempting to read reduce files %w", err))
 		return
 	}
 
-	log.Printf("starting reduce task %v decode intermediary file", index)
+	packageLogger.Printf("starting reduce task %v decode intermediary file", index)
 	kvChan := make(chan []KeyValue, reduceTaskReply.NReduce+1)
 	wg := &sync.WaitGroup{}
-	log.Printf("reduce task %v returned files length %v", index, len(files))
+	packageLogger.Printf("reduce task %v returned files length %v", index, len(files))
 	wg.Add(len(files))
 	for _, f := range files {
 		go decodeIntermediaryFile(f, wg, kvChan)
@@ -171,17 +160,17 @@ func runReducef(reduceTaskReply *TaskReply, reducef func(string, []string) strin
 	}
 
 	sort.Sort(ByKey(intermediate))
-	log.Printf("reduce task %v intermediate arr size %v", index, len(intermediate))
-	log.Printf("starting reduce task %v open output file", index)
+	packageLogger.Printf("reduce task %v intermediate arr size %v", index, len(intermediate))
+	packageLogger.Printf("starting reduce task %v open output file", index)
 	oname := fmt.Sprintf("mr-out-%v", index)
 	ofile, err := os.Create(oname)
 
 	if err != nil {
-		log.Print(fmt.Errorf("error occured while attempting to read reduce files %w", err))
+		packageLogger.Print(fmt.Errorf("error occured while attempting to read reduce files %w", err))
 		return
 	}
 
-	log.Printf("starting reduce task %v reduce function call", index)
+	packageLogger.Printf("starting reduce task %v reduce function call", index)
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
@@ -202,7 +191,7 @@ func runReducef(reduceTaskReply *TaskReply, reducef func(string, []string) strin
 	ofile.Close()
 	ok := completeReduceTask(reduceTaskReply.Id)
 	if !ok {
-		log.Printf("failed to message coordinator with reduce complete for task %v", index)
+		packageLogger.Printf("failed to message coordinator with reduce complete for task %v", index)
 		return
 	}
 }
@@ -326,7 +315,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
-		log.Print("dialing:", err)
+		packageLogger.Print("dialing:", err)
 		return false
 	}
 	defer c.Close()
@@ -336,6 +325,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	log.Print(err)
+	packageLogger.Printf("Error making RPC call %v", err)
 	return false
 }

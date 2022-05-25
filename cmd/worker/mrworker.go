@@ -11,6 +11,7 @@ package main
 //
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"map-reduce/mr"
@@ -19,14 +20,25 @@ import (
 )
 
 func main() {
+	pid := os.Getpid()
+	logFlag := flag.String("log", fmt.Sprintf("worker-%v.log", pid), "Sets output location of logs")
+	flag.Parse()
+
 	if len(os.Args) != 2 {
 		fmt.Fprintf(os.Stderr, "Usage: mrworker xxx.so\n")
 		os.Exit(1)
 	}
 
+	lf, err := os.OpenFile(*logFlag, os.O_CREATE|os.O_RDWR, 0777)
+	if err != nil {
+		log.Fatalf("Cannot open log file at location %v", *logFlag)
+	}
+
+	log := log.New(lf, "", log.LstdFlags)
+
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	mr.Worker(mapf, reducef)
+	mr.Worker(mapf, reducef, log)
 }
 
 //
