@@ -56,7 +56,7 @@ echo '***' Starting map parallelism test.
 
 rm -f mr-*
 
-$TIMEOUT ../cmd/coordinator/mrcoordinator ../test/testdata/pg*txt/pg*txt &
+$TIMEOUT ../cmd/coordinator/mrcoordinator ../test/testdata/pg*txt &
 sleep 1
 
 $TIMEOUT ../cmd/worker/mrworker ../plugins/mtiming/mtiming.so &
@@ -87,7 +87,7 @@ echo '***' Starting reduce parallelism test.
 
 rm -f mr-*
 
-$TIMEOUT ../cmd/coordinator/mrcoordinator ../test/testdata/pg*txt/pg*txt &
+$TIMEOUT ../cmd/coordinator/mrcoordinator ../test/testdata/pg*txt &
 sleep 1
 
 $TIMEOUT ../cmd/worker/mrworker ../plugins/rtiming/rtiming.so &
