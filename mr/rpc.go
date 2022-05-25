@@ -9,6 +9,8 @@ package mr
 import (
 	"os"
 	"strconv"
+
+	"github.com/jmattson4/map-reduce/grpc"
 )
 
 // Add your RPC definitions here.
@@ -22,6 +24,10 @@ type TaskReply struct {
 	Id      string
 	Type    TaskType
 	NReduce int
+}
+
+func NewTaskReplyFromProtobuf(tr *grpc.TaskReply) *TaskReply {
+	return &TaskReply{Id: tr.Id, Type: TaskType(tr.Type), NReduce: int(tr.NReduce)}
 }
 
 // Cook up a unique-ish UNIX-domain socket name

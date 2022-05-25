@@ -23,6 +23,11 @@ import (
 func main() {
 	pid := os.Getpid()
 	logFlag := flag.String("log", fmt.Sprintf("worker-%v.log", pid), "Sets output location of logs")
+
+	rpcMethod := flag.String("rpc", "grpc", "Sets rpc method. Choices are either rpc or grpc")
+
+	coordinatorServer := flag.String("server", "localhost:8089", "Sets server address for worker")
+
 	flag.Parse()
 
 	if len(os.Args) != 2 {
@@ -39,7 +44,8 @@ func main() {
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	mr.Worker(mapf, reducef, log)
+	fmt.Printf("rpc method %v", rpcMethod)
+	mr.Worker(mapf, reducef, log, *rpcMethod, *coordinatorServer)
 }
 
 //

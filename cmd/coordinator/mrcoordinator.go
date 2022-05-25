@@ -36,11 +36,10 @@ func main() {
 
 	log := log.New(lf, "", log.LstdFlags)
 	log.Print(os.Args)
-	m := mr.MakeCoordinator(os.Args[1:], *reduceCountFlag, log)
+	m := mr.MakeCoordinator(os.Args[1:], *reduceCountFlag, log, "grpc", 8089)
 
 	for m.Done() == false {
 		time.Sleep(time.Second)
 	}
-
 	time.Sleep(time.Second)
 }

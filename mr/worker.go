@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -14,10 +15,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	localGrpc "github.com/jmattson4/map-reduce/grpc"
 )
 
 var (
 	packageLogger *log.Logger = nil
+	conn          *grpc.ClientConn
+	client        localGrpc.TaskServiceClient
+	rpcMethod     string
 )
 
 //
@@ -33,6 +42,15 @@ func ihash(key string) int {
 //completeMapTask makes a rpc call to Coordinator.TaskHandler with the HandlerType of CompleteMap along with
 //the taskId which needs to be completed.
 func completeMapTask(taskId string) bool {
+	if rpcMethod == "grpc" {
+		taskArgs := localGrpc.TaskArgs{Id: taskId, HandlerType: int32(CompleteMap)}
+		_, err := client.GetTask(context.Background(), &taskArgs)
+		if err != nil {
+			packageLogger.Print(err)
+			return false
+		}
+		return true
+	}
 	tr := &TaskReply{}
 	return call("Coordinator.TaskHandler", &TaskArgs{Id: taskId, HandlerType: CompleteMap}, tr)
 }
@@ -40,6 +58,15 @@ func completeMapTask(taskId string) bool {
 //completeReduceTask makes a rpc call to Coordinator.TaskHandler with the HandlerType of CompleteReduce along with
 //the taskId which needs to be completed.
 func completeReduceTask(taskId string) bool {
+	if rpcMethod == "grpc" {
+		taskArgs := localGrpc.TaskArgs{Id: taskId, HandlerType: int32(CompleteReduce)}
+		_, err := client.GetTask(context.Background(), &taskArgs)
+		if err != nil {
+			packageLogger.Print(err)
+			return false
+		}
+		return true
+	}
 	tr := &TaskReply{}
 	return call("Coordinator.TaskHandler", &TaskArgs{Id: taskId, HandlerType: CompleteReduce}, tr)
 }
@@ -47,6 +74,15 @@ func completeReduceTask(taskId string) bool {
 //getTask makes an RPC call to Coordinator.TaskHandler with HandlerType GetTask.
 //It then returns a TaskReply and whether the request was ok.
 func getTask() (tr *TaskReply, ok bool) {
+	if rpcMethod == "grpc" {
+		taskArgs := localGrpc.TaskArgs{HandlerType: int32(GetTask)}
+		tr, err := client.GetTask(context.Background(), &taskArgs)
+		if err != nil {
+			packageLogger.Print(err)
+			return nil, false
+		}
+		return NewTaskReplyFromProtobuf(tr), true
+	}
 	tr = &TaskReply{}
 	ok = call("Coordinator.TaskHandler", &TaskArgs{HandlerType: GetTask}, tr)
 	return
@@ -61,9 +97,22 @@ func getTask() (tr *TaskReply, ok bool) {
 // the tasks.
 //
 func Worker(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string, log *log.Logger) {
-	// Your worker implementation here.
+	reducef func(string, []string) string, log *log.Logger,
+	rpc string, target string) {
 	packageLogger = log
+	packageLogger.Printf("rpc %v", rpc)
+
+	rpcMethod = rpc
+
+	if rpcMethod == "grpc" {
+		packageLogger.Print("Attempting dial of GRPC server.")
+		conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			packageLogger.Fatalf("Could not connect to GRPC server at adress %v; %v", target, err)
+		}
+		client = localGrpc.NewTaskServiceClient(conn)
+	}
+
 	ok := true
 	for ok {
 		tr, ok := getTask()

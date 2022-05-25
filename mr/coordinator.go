@@ -1,6 +1,8 @@
 package mr
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -9,12 +11,19 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	googleGrpc "google.golang.org/grpc"
+
+	"github.com/jmattson4/map-reduce/grpc"
 )
 
 //Coordinator is a datastructure which represents a map reduce coordinator
 //server. This is used to coordinate tasks amongst a group of distributed workers
 //which are running map then reduce tasks on a files.
 type Coordinator struct {
+	grpc.UnimplementedTaskServiceServer
+
+	grpcServ *googleGrpc.Server
 	//count of reducer jobs.
 	nReduce int
 	mu      *sync.RWMutex
@@ -30,8 +39,24 @@ type Coordinator struct {
 
 	logger *log.Logger
 
+	rpcMethod string
+	port      uint16
+
 	reduceTaskChan chan int
 	mapTaskChan    chan string
+}
+
+func (c *Coordinator) GetTask(ctx context.Context, taskArgs *grpc.TaskArgs) (*grpc.TaskReply, error) {
+	localTaskReply := &TaskReply{}
+	err := c.TaskHandler(&TaskArgs{Id: taskArgs.Id, HandlerType: HandlerType(taskArgs.HandlerType)}, localTaskReply)
+	if err != nil {
+		return nil, err
+	}
+	return &grpc.TaskReply{
+		Id:      localTaskReply.Id,
+		NReduce: int32(localTaskReply.NReduce),
+		Type:    int32(localTaskReply.Type),
+	}, nil
 }
 
 // TaskHandler is the single RPC handler used to manage different operations.
@@ -45,7 +70,7 @@ func (c *Coordinator) TaskHandler(args *TaskArgs, reply *TaskReply) error {
 	case GetTask:
 		select {
 		case filename := <-c.mapTaskChan:
-			c.logger.Printf("Task Handler Map Task %v", filename)
+			c.logger.Printf("Issuing Map Task %v", filename)
 			// allocate map task
 			reply.NReduce = c.nReduce
 			reply.Id = filename
@@ -57,7 +82,7 @@ func (c *Coordinator) TaskHandler(args *TaskArgs, reply *TaskReply) error {
 			return nil
 
 		case reduceNum := <-c.reduceTaskChan:
-			// allocate reduce task
+			c.logger.Printf("Issuing Reduce Task %v", reduceNum)
 			reply.Type = Reduce
 			reply.NReduce = c.nReduce
 			reply.Id = strconv.Itoa(reduceNum)
@@ -68,8 +93,10 @@ func (c *Coordinator) TaskHandler(args *TaskArgs, reply *TaskReply) error {
 			return nil
 		}
 	case CompleteMap:
+		c.logger.Printf("Completing map task %v", args.Id)
 		c.mapTasks.Put(args.Id, Finished)
 	case CompleteReduce:
+		c.logger.Printf("Completing reduce task %v", args.Id)
 		index, _ := strconv.Atoi(args.Id)
 		c.reduceTasks.Put(index, Finished)
 	}
@@ -195,6 +222,7 @@ func (c *Coordinator) generateTasks() {
 
 	c.mu.Lock()
 	c.reduceTaskCompleted = true
+	c.logger.Print("All Reduce Tasks Complete")
 	c.mu.Unlock()
 }
 
@@ -202,23 +230,42 @@ func (c *Coordinator) generateTasks() {
 // start a thread that listens for RPCs from worker.go
 //
 func (c *Coordinator) server() {
-	c.rpc()
 	go c.generateTasks()
-	//l, e := net.Listen("tcp", ":1234")
-	sockname := coordinatorSock()
-	os.Remove(sockname)
-	c.logger.Printf("Now listening on sock %v", sockname)
-	l, e := net.Listen("unix", sockname)
-	if e != nil {
-		log.Fatal("listen error:", e)
+	if c.rpcMethod == "rpc" {
+		c.rpc()
+		//l, e := net.Listen("tcp", ":1234")
+		sockname := coordinatorSock()
+		os.Remove(sockname)
+		c.logger.Printf("Now listening on sock %v", sockname)
+		l, e := net.Listen("unix", sockname)
+		if e != nil {
+			log.Fatal("listen error:", e)
+		}
+		c.logger.Print("Starting RPC server")
+		go http.Serve(l, nil)
+	} else {
+		serviceName := fmt.Sprintf("localhost:%v", c.port)
+		l, e := net.Listen("tcp", serviceName)
+		c.logger.Printf("Now listening on sock %v", serviceName)
+		if e != nil {
+			log.Fatal("listen error:", e)
+		}
+		c.logger.Print("Starting GRPC server")
+		go c.grpc(l)
 	}
-	c.logger.Print("Starting Server in seperate go routine")
-	go http.Serve(l, nil)
 }
 
 func (c *Coordinator) rpc() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
+}
+
+func (c *Coordinator) grpc(lis net.Listener) {
+	c.mu.Lock()
+	c.grpcServ = googleGrpc.NewServer()
+	grpc.RegisterTaskServiceServer(c.grpcServ, c)
+	c.mu.Unlock()
+	c.grpcServ.Serve(lis)
 }
 
 //
@@ -229,9 +276,13 @@ func (c *Coordinator) Done() bool {
 	ret := false
 
 	// Your code here.
-	c.mu.RLock()
+	c.mu.Lock()
 	ret = c.reduceTaskCompleted
-	c.mu.RUnlock()
+	if ret && c.rpcMethod == "grpc" {
+		c.logger.Printf("Shutting down GRPC server")
+		c.grpcServ.Stop()
+	}
+	c.mu.Unlock()
 
 	return ret
 }
@@ -240,22 +291,33 @@ func (c *Coordinator) SetLogger(log *log.Logger) {
 	c.logger = log
 }
 
+func (c *Coordinator) SetPort(port uint16) {
+	c.port = port
+}
+
 //
 // create a Coordinator.
 // cmd/coordiantor/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 //
-func MakeCoordinator(files []string, nReduce int, log *log.Logger) *Coordinator {
+func MakeCoordinator(
+	files []string,
+	nReduce int,
+	log *log.Logger,
+	rpcMethod string,
+	port uint16,
+) *Coordinator {
 	c := Coordinator{}
-	// Your code here.
 	mapTasks := make(chan string, len(files))
 	reduceTasks := make(chan int, nReduce)
 
 	c.mapTaskChan = mapTasks
 	c.reduceTaskChan = reduceTasks
+	c.rpcMethod = rpcMethod
 
 	c.setDefaults(files, nReduce)
 	c.SetLogger(log)
+	c.SetPort(port)
 	c.server()
 	return &c
 }
